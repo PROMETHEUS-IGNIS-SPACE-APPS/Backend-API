@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ingestion degraded-mode snapshots (local runtime cache, never versioned)
+data/cache/
