@@ -18,6 +18,13 @@ router = APIRouter(prefix="/api/fusion", tags=["ingestion"])
 @router.get(
     "/observations",
     summary="Fused IDEAM + NASA FIRMS observations for an inclusive date range.",
+    description=(
+        "Deduplicated merge of the official IDEAM daily CSVs and the NASA "
+        "FIRMS public NRT 7d feeds for the requested window and region. "
+        "Cross-sensor pairs of the same thermal anomaly (~1.6 km, ±90 min) "
+        "are tagged through `concordance` instead of being silently "
+        "overcounted. Results are cached 15 minutes."
+    ),
     response_model=FusionResponse,
 )
 async def get_observations(
@@ -50,6 +57,15 @@ async def get_observations(
     summary=(
         "Multi-year coverage 2024-01-01 to today: sampled archive cuts, "
         "a dense recent window and live FIRMS."
+    ),
+    description=(
+        "**Heavy endpoint**: builds the full multi-year coverage (dense last "
+        "45 days + one IDEAM archive cut per half-month + live FIRMS), "
+        "condensed to the 9000 most recent records to protect browser "
+        "performance. First uncached call can take tens of seconds because "
+        "it downloads up to ~110 daily files; afterwards it is served from "
+        "a 30-minute cache (`cached: true`). Prefer `/api/fusion/observations` "
+        "for interactive exploration."
     ),
     response_model=FusionResponse,
 )

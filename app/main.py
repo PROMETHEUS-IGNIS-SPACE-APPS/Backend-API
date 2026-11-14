@@ -19,6 +19,38 @@ def _allowed_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+_OPENAPI_TAGS = [
+    {
+        "name": "status",
+        "description": (
+            "Service availability and ingestion capabilities. Start here to "
+            "check what this deployment can serve."
+        ),
+    },
+    {
+        "name": "ingestion",
+        "description": (
+            "Real data ingested live from official public sources (IDEAM-SMByC "
+            "and NASA FIRMS public NRT). Responses carry full provenance and "
+            "may degrade to an authentic stored snapshot during source "
+            "outages (always announced via `degradedMode` + `warning`). "
+            "Errors: 400 invalid dates, 502 sources unavailable."
+        ),
+    },
+    {
+        "name": "observations",
+        "description": (
+            "SYNTHETIC demo observations (contract v0.1). Data is labeled "
+            '`data_provenance: "synthetic_demo"` and is NOT real NASA data.'
+        ),
+    },
+    {
+        "name": "health",
+        "description": "Stable legacy health check for the v1 contract.",
+    },
+]
+
+
 app = FastAPI(
     title="NASA Fire Harmonization API",
     version=API_VERSION,
@@ -29,6 +61,7 @@ app = FastAPI(
         "endpoints ingest real IDEAM and NASA FIRMS public data with their "
         "original provenance."
     ),
+    openapi_tags=_OPENAPI_TAGS,
 )
 
 app.add_middleware(

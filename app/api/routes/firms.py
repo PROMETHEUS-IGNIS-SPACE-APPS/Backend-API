@@ -15,6 +15,14 @@ router = APIRouter(prefix="/api/firms", tags=["ingestion"])
 @router.get(
     "/observations",
     summary="Real observations from the public NASA FIRMS NRT 7d South America feeds.",
+    description=(
+        "Fetches the three public FIRMS Earthdata CSV feeds in parallel "
+        "(MODIS C6.1, VIIRS NOAA-20, VIIRS NOAA-21; last 7 days, no MAP_KEY "
+        "required) and filters them to the requested region/bbox. Does not "
+        "require a `from`/`to` range: the feeds always cover the last 7 "
+        "days. Cached 15 minutes; `feedsLoaded` reports which feeds "
+        "actually responded."
+    ),
     response_model=FirmsResponse,
 )
 async def get_observations(

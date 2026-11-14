@@ -26,12 +26,54 @@ ConcordanceType = Literal["single_sensor", "coincident_high", "coincident_modera
 DataSourceOrigin = Literal["IDEAM", "NASA_FIRMS", "CITIZEN", "SYNTHETIC"]
 VerificationStatus = Literal["verified", "pending"]
 
+_EXAMPLE_REFERENCE_URL = (
+    "https://puntosdecalor.ideam.gov.co/archivos-csv/Puntos_de_calor_Colombia_2026-11-13.csv"
+)
+
+# Real record ingested live from the IDEAM portal on 2026-11-14; kept in
+# sync with the documented contract example in docs/api-contracts.md.
+_EXAMPLE_OBSERVATION: dict = {
+    "id": "IDEAM_VIIRS_202611131349_6.3764_-74.3615",
+    "observation_id": "IDEAM_VIIRS_202611131349_6.3764_-74.3615",
+    "latitude": 6.3764,
+    "longitude": -74.3615,
+    "acquired_at": "2026-11-13T18:49:00+00:00",
+    "observedAtUtc": "2026-11-13T18:49:00+00:00",
+    "observedAtLocalCot": "2026-11-13 13:49",
+    "acq_date": "2026-11-13",
+    "acq_time": "1349",
+    "sensor": "VIIRS",
+    "satellite": "NOAA-20",
+    "instrument": "VIIRS",
+    "confidence_raw": "Nominal",
+    "confidence_level": "nominal",
+    "confidence_score": 60,
+    "frp_mw": 5.2,
+    "brightness_k": 309.25,
+    "secondary_brightness_k": 289.35,
+    "scan_km": 0.55,
+    "track_km": 0.51,
+    "daynight": "N",
+    "concordance": "single_sensor",
+    "department": "Antioquia",
+    "municipality": "Puerto Berrío",
+    "source": "IDEAM (VIIRS-NOAA-20)",
+    "source_origin": "IDEAM",
+    "verification_status": None,
+    "quality_flags": [],
+    "ingested_at": "2026-11-14T19:23:00+00:00",
+    "reference_url": _EXAMPLE_REFERENCE_URL,
+    "is_synthetic": False,
+}
+
 
 class HotspotObservation(BaseModel):
     """A single thermal detection as exposed by the ingestion endpoints."""
 
-    model_config = ConfigDict(populate_by_name=True)
-
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={"example": _EXAMPLE_OBSERVATION},
+    )
     id: str
     observation_id: str
     latitude: float = Field(ge=-90.0, le=90.0)

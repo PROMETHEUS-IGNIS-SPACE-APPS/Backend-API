@@ -23,6 +23,12 @@ router = APIRouter(prefix="/api/ideam", tags=["ingestion"])
 @router.get(
     "/directory",
     summary="List the daily IDEAM CSV files currently published by the portal.",
+    description=(
+        "Reads the live index of the official IDEAM-SMByC portal and returns "
+        "the 30 most recent daily file dates plus the total number of files "
+        "published. Useful to check source availability before querying "
+        "`/api/ideam/observations`."
+    ),
     response_model=IdeamDirectoryResponse,
 )
 async def get_directory() -> IdeamDirectoryResponse | JSONResponse:
@@ -36,6 +42,14 @@ async def get_directory() -> IdeamDirectoryResponse | JSONResponse:
 @router.get(
     "/observations",
     summary="Real thermal observations from the official IDEAM daily CSVs.",
+    description=(
+        "Downloads and parses the official IDEAM-SMByC daily CSVs "
+        "(semicolon delimiter, comma decimals, UTC-5 timestamps) for each "
+        "date in the inclusive range, max 90 days per query. If every file "
+        "fails to download, the response degrades to the last authentic "
+        "stored snapshot (`degradedMode: true`). Invalid dates return 400. "
+        "Results are cached 15 minutes per (from, to, region, bbox)."
+    ),
     response_model=FusionResponse,
 )
 async def get_observations(
