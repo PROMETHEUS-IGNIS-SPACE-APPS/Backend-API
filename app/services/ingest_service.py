@@ -41,6 +41,7 @@ from app.schemas.ingest import (
     IngestMetadata,
     ServiceStatus,
 )
+from app.services import ai_service
 from app.utils.deduplication import deduplicate_observations
 from app.utils.geo import (
     IDEAM_MAX_DAYS_PER_QUERY,
@@ -476,7 +477,7 @@ def get_service_status() -> ServiceStatus:
     return ServiceStatus(
         service="NASA Fire Harmonization API - Public Data Ingest",
         timestamp_utc=_now_utc(),
-        has_gemini_key=False,
+        has_gemini_key=ai_service.has_api_key(),
         has_firms_key=False,
         firms_public_nrt_available=True,
         ideam_max_days_per_query=IDEAM_MAX_DAYS_PER_QUERY,

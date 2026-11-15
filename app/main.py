@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import API_VERSION
-from app.api.routes import firms, fusion, health, ideam, observations, status
+from app.api.routes import ai, firms, fusion, health, ideam, observations, status
 from app.schemas.ingest import ReadinessStatus
 
 _STARTED_AT_MONOTONIC = time.monotonic()
@@ -39,6 +39,13 @@ _OPENAPI_TAGS = [
             "may degrade to an authentic stored snapshot during source "
             "outages (always announced via `degradedMode` + `warning`). "
             "Errors: 400 invalid dates, 502 sources unavailable."
+        ),
+    },
+    {
+        "name": "ai",
+        "description": (
+            "Optional server-side explanation of platform figures with Google "
+            "Gemini. Requires GEMINI_API_KEY on the server; answers 503 otherwise."
         ),
     },
     {
@@ -81,6 +88,7 @@ app.include_router(status.router)
 app.include_router(ideam.router)
 app.include_router(firms.router)
 app.include_router(fusion.router)
+app.include_router(ai.router)
 
 
 @app.get("/healthz", tags=["status"], summary="Readiness probe (no /api prefix).")

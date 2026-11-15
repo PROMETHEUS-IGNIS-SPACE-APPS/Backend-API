@@ -83,4 +83,9 @@ aporte.
   "ninguna por ahora"): FIRMS Area API con MAP_KEY (por env, nunca
   versionado), `/api/weather`, citizen-reports CRUD (password '1025' del
   Ejemplo — discutir seguridad, AGENTS prohíbe credenciales fijas),
-  `/api/gemini/explain`, `/api/connectors/verify`, pre-warm al arrancar.
+  `/api/connectors/verify`, pre-warm al arrancar.
+- 2026-11-15 (decisión del usuario): `POST /api/ai/explain` (equivalente a
+  `/api/gemini/explain` del Ejemplo) con Gemini por REST vía httpx (sin
+  dependencias nuevas). Clave solo en servidor: `GEMINI_API_KEY` en entorno o
+  `.env` (cargador propio `app/utils/env.py`; `.env` está en .gitignore).
+  503 sin clave; caché en memoria; `hasGeminiKey` refleja la clave.

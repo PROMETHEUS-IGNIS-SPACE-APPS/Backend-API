@@ -13,8 +13,9 @@ router = APIRouter(prefix="/api", tags=["status"])
     summary="Check that the service is running and report its ingestion capabilities.",
     description=(
         "Lightweight readiness probe with no remote calls. `hasFirmsKey` "
-        "and `hasGeminiKey` are false because this deployment uses the "
-        "public NRT feeds only and does not integrate AI assistance; "
+        "is false because this deployment uses the public NRT feeds only; "
+        "`hasGeminiKey` is true when GEMINI_API_KEY is configured for "
+        "`POST /api/ai/explain`; "
         "`citizenReportsCount` is 0 while the citizen-report store is not "
         "part of this backend; `ideamMaxDaysPerQuery` states the hard "
         "limit enforced by the IDEAM endpoints."

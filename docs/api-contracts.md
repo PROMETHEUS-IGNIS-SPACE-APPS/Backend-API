@@ -57,9 +57,10 @@ cambios. Los datos provienen **en vivo** de fuentes oficiales públicas:
 ```
 
 Nota (2026-11-14): el campo antes llamado `hasFirmsMapKey` pasó a
-llamarse `hasFirmsKey` para coincidir con la referencia; `hasGeminiKey`
-y `citizenReportsCount` se exponen con valores neutros porque este
-backend no integra IA ni reportes ciudadanos.
+llamarse `hasFirmsKey` para coincidir con la referencia;
+`citizenReportsCount` se expone en 0 porque este backend no integra
+reportes ciudadanos. Desde 2026-11-15 `hasGeminiKey` es `true` cuando hay
+`GEMINI_API_KEY` configurada para `POST /api/ai/explain`.
 
 ### GET /healthz (sonda de readiness, sin prefijo `/api`)
 
@@ -174,6 +175,45 @@ registros, 114 archivos fuente, 99 días distintos.
 > por decisión del equipo: la rama `develop` del frontend lo consume
 > (modo "Histórico muestreado"). El proyecto de referencia no lo
 > expone; es una extensión propia del backend.
+
+### POST /api/ai/explain (interpretación con IA, opcional)
+
+Explica en lenguaje claro cifras que el frontend ya calculó (pronóstico Markov,
+validación, ranking, matrices del calendario). Usa Google Gemini desde el
+servidor; la clave vive solo en el backend (`GEMINI_API_KEY` en el entorno o en
+`Backend-API/.env`, ver `.env.example`; modelo opcional `GEMINI_MODEL`, por
+defecto `gemini-2.5-flash`). `GET /api/health` informa `hasGeminiKey`.
+
+Cuerpo:
+
+```json
+{ "mode": "predictability", "payload": { "...": "cifras de la plataforma" }, "language": "es" }
+```
+
+`mode` admite `predictability` o `calendar`. Respuesta 200:
+
+```json
+{
+  "ok": true,
+  "model": "gemini-2.5-flash",
+  "cached": false,
+  "structured": {
+    "resumenEjecutivo": "...",
+    "hallazgosClave": ["..."],
+    "interpretacionSensores": "...",
+    "interpretacionMarkov": "...",
+    "limitacionesYCautela": ["..."],
+    "recomendacionesOperativas": ["..."]
+  },
+  "disclaimer": "Lectura generada por IA a partir de las cifras de la plataforma. ..."
+}
+```
+
+Errores (`detail` en español): 503 sin `GEMINI_API_KEY`, 413 datos demasiado
+grandes (> 60 000 caracteres), 422 cuerpo inválido, 429 cuota del proveedor,
+502 error o respuesta inválida del proveedor. Respuestas iguales se guardan en
+caché en memoria (64 entradas). El modelo solo puede interpretar las cifras
+recibidas; no inventa ni modifica probabilidades.
 
 ### Errores de la ingesta
 
