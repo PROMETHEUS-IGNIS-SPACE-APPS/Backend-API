@@ -135,9 +135,9 @@ class IdeamRepository:
         observations: list[HotspotObservation] = []
         loaded_files: list[str] = []
         failed_files: list[str] = []
-        for date, parsed in outcomes:
+        for date, parsed, failure in outcomes:
             if parsed is None:
-                failed_files.append(ideam_file_name(date))
+                failed_files.append(f"{ideam_file_name(date)} ({failure})")
             else:
                 observations.extend(parsed)
                 loaded_files.append(ideam_file_name(date))
@@ -157,12 +157,16 @@ class IdeamRepository:
         ingested_at: str,
         timeout_seconds: float,
         retries: int,
-    ) -> tuple[str, list[HotspotObservation] | None]:
-        """Fetch and parse one daily file; return None when unavailable."""
+    ) -> tuple[str, list[HotspotObservation] | None, str]:
+        """Fetch and parse one daily file; return (date, parsed, failure reason)."""
         cache_hit = self._daily_cache.get(date)
         if cache_hit is not None and time.monotonic() - cache_hit[0] < CACHE_TTL_SECONDS:
-            return date, parse_ideam_csv(
-                cache_hit[1], bbox=bbox, ingested_at=ingested_at, file_ref=_file_url(date)
+            return (
+                date,
+                parse_ideam_csv(
+                    cache_hit[1], bbox=bbox, ingested_at=ingested_at, file_ref=_file_url(date)
+                ),
+                "",
             )
         async with semaphore:
             try:
@@ -172,13 +176,17 @@ class IdeamRepository:
                     timeout_seconds=timeout_seconds,
                     retries=retries,
                 )
-            except httpx.TransportError:
-                return date, None
+            except httpx.TransportError as error:
+                return date, None, str(error)
         if response.status_code != 200 or ";" not in response.text:
-            return date, None
+            return date, None, f"HTTP {response.status_code}"
         self._daily_cache[date] = (time.monotonic(), response.text)
-        return date, parse_ideam_csv(
-            response.text, bbox=bbox, ingested_at=ingested_at, file_ref=_file_url(date)
+        return (
+            date,
+            parse_ideam_csv(
+                response.text, bbox=bbox, ingested_at=ingested_at, file_ref=_file_url(date)
+            ),
+            "",
         )
 
     def _client(self) -> httpx.AsyncClient:

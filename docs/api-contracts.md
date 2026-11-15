@@ -48,10 +48,23 @@ cambios. Los datos provienen **en vivo** de fuentes oficiales públicas:
   "ok": true,
   "service": "NASA Fire Harmonization API - Public Data Ingest",
   "timestampUtc": "2026-11-14T19:25:25.550672+00:00",
-  "hasFirmsMapKey": false,
+  "hasGeminiKey": false,
+  "hasFirmsKey": false,
   "firmsPublicNrtAvailable": true,
-  "ideamMaxDaysPerQuery": 90
+  "ideamMaxDaysPerQuery": 90,
+  "citizenReportsCount": 0
 }
+```
+
+Nota (2026-11-14): el campo antes llamado `hasFirmsMapKey` pasó a
+llamarse `hasFirmsKey` para coincidir con la referencia; `hasGeminiKey`
+y `citizenReportsCount` se exponen con valores neutros porque este
+backend no integra IA ni reportes ciudadanos.
+
+### GET /healthz (sonda de readiness, sin prefijo `/api`)
+
+```json
+{ "ok": true, "service": "prometheus-ignis", "uptimeSec": 42 }
 ```
 
 ### GET /api/ideam/directory
@@ -129,6 +142,14 @@ Respuesta `200` (`FusionResponse`), verificada en vivo el 2026-11-14:
 
 Respuesta `200` (`FirmsResponse`): añade `publicNrtMode: true`,
 `hasMapKey`, `source`, `feedsLoaded`, `count` y las mismas observaciones.
+En respuesta normal no aparece `degradedMode` (se omite); ante caída
+total de FIRMS se sirve el snapshot guardado para `colombia` con
+`degradedMode: true` y `warning`.
+
+Importante: los identificadores de FIRMS usan el **id del feed**
+(`observation_id: "FIRMS_MODIS_C6_1_7d_..."`, `source: "NASA FIRMS
+(MODIS_C6_1_7d)"`), igual que la referencia; `failedFeeds`/`failedFiles`
+incluyen el detalle `(HTTP xxx)`.
 
 Verificado en vivo (2026-11-14, Colombia): 3731 registros, 3 feeds,
 concordancia marcada en 45 pares.
@@ -136,14 +157,14 @@ concordancia marcada en 45 pares.
 ### GET /api/fusion/observations?from=&to=&region=&bbox=
 
 Igual a `FusionResponse` con `metadata.ideamRawCount`,
-`metadata.firmsRawCount` y fusión deduplicada de ambas fuentes.
+`metadata.firmsRawCount` y fusión deduplicada de ambas fuentes. Un
+acierto de la caché TTL (15 min) marca `cached: true`; una respuesta
+fresca marca `cached: false`.
 
-### GET /api/fusion/historical-all?region=&bbox=
-
-Igual a `FusionResponse`; ventana `2024-01-01` → hoy (fecha COT):
-45 días densos + cortes archivísticos semimensuales + FIRMS en vivo,
-condensado a los 9000 registros más recientes. Verificado en vivo
-(2026-11-14): 9000 registros, 114 archivos fuente, 99 días distintos.
+> La versión anterior de este contrato documentaba
+> `GET /api/fusion/historical-all`; ese endpoint **se retiró** el
+> 2026-11-14 porque la referencia final (carpeta `Ejemplo`, actualizada
+> el mismo día) ya no lo expone ni su frontend lo consume.
 
 ### Errores de la ingesta
 

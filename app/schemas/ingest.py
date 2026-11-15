@@ -76,21 +76,21 @@ class IngestMetadata(BaseModel):
     model_config = _aliased_config(json_schema_extra={"example": _EXAMPLE_METADATA})
 
     source: str
-    fetched_at_utc: str = Field(serialization_alias="fetchedAtUtc")
-    from_: str = Field(serialization_alias="from")
+    fetched_at_utc: str = Field(alias="fetchedAtUtc")
+    from_: str = Field(alias="from")
     to: str
     region: str
     bbox: BboxModel
-    files_loaded: list[str] = Field(default_factory=list, serialization_alias="filesLoaded")
-    raw_count: int = Field(serialization_alias="rawCount")
-    deduplicated_count: int = Field(serialization_alias="deduplicatedCount")
+    files_loaded: list[str] = Field(default_factory=list, alias="filesLoaded")
+    raw_count: int = Field(alias="rawCount")
+    deduplicated_count: int = Field(alias="deduplicatedCount")
     attribution: str
-    ideam_raw_count: int | None = Field(default=None, serialization_alias="ideamRawCount")
-    firms_raw_count: int | None = Field(default=None, serialization_alias="firmsRawCount")
+    ideam_raw_count: int | None = Field(default=None, alias="ideamRawCount")
+    firms_raw_count: int | None = Field(default=None, alias="firmsRawCount")
 
 
 class FusionResponse(BaseModel):
-    """Response of the IDEAM, fusion and historical ingestion endpoints."""
+    """Response of the IDEAM and fusion ingestion endpoints."""
 
     model_config = _aliased_config(
         json_schema_extra={
@@ -107,7 +107,7 @@ class FusionResponse(BaseModel):
 
     ok: Literal[True] = True
     cached: bool = False
-    degraded_mode: bool = Field(serialization_alias="degradedMode")
+    degraded_mode: bool = Field(alias="degradedMode")
     warning: str | None = None
     metadata: IngestMetadata
     observations: list[HotspotObservation]
@@ -140,12 +140,13 @@ class FirmsResponse(BaseModel):
     )
 
     ok: Literal[True] = True
-    public_nrt_mode: bool = Field(serialization_alias="publicNrtMode")
-    has_map_key: bool = Field(serialization_alias="hasMapKey")
+    degraded_mode: bool | None = Field(default=None, alias="degradedMode")
+    public_nrt_mode: bool = Field(alias="publicNrtMode")
+    has_map_key: bool = Field(alias="hasMapKey")
     source: str
-    feeds_loaded: list[str] = Field(serialization_alias="feedsLoaded")
+    feeds_loaded: list[str] = Field(alias="feedsLoaded")
     bbox: BboxModel
-    fetched_at_utc: str = Field(serialization_alias="fetchedAtUtc")
+    fetched_at_utc: str = Field(alias="fetchedAtUtc")
     count: int
     warning: str | None = None
     observations: list[HotspotObservation]
@@ -166,9 +167,9 @@ class IdeamDirectoryResponse(BaseModel):
     )
 
     ok: Literal[True] = True
-    portal_url: str = Field(serialization_alias="portalUrl")
-    total_files: int = Field(serialization_alias="totalFiles")
-    latest_dates: list[str] = Field(serialization_alias="latestDates")
+    portal_url: str = Field(alias="portalUrl")
+    total_files: int = Field(alias="totalFiles")
+    latest_dates: list[str] = Field(alias="latestDates")
 
 
 class ServiceStatus(BaseModel):
@@ -180,22 +181,36 @@ class ServiceStatus(BaseModel):
                 "ok": True,
                 "service": "NASA Fire Harmonization API - Public Data Ingest",
                 "timestampUtc": "2026-11-14T19:25:25.550672+00:00",
-                "hasFirmsMapKey": False,
+                "hasGeminiKey": False,
+                "hasFirmsKey": False,
                 "firmsPublicNrtAvailable": True,
                 "ideamMaxDaysPerQuery": 90,
+                "citizenReportsCount": 0,
             }
         }
     )
 
     ok: Literal[True] = True
     service: str
-    timestamp_utc: str = Field(serialization_alias="timestampUtc")
-    has_firms_map_key: bool = Field(serialization_alias="hasFirmsMapKey")
-    firms_public_nrt_available: bool = Field(serialization_alias="firmsPublicNrtAvailable")
-    ideam_max_days_per_query: int = Field(serialization_alias="ideamMaxDaysPerQuery")
+    timestamp_utc: str = Field(alias="timestampUtc")
+    has_gemini_key: bool = Field(alias="hasGeminiKey", default=False)
+    has_firms_key: bool = Field(alias="hasFirmsKey", default=False)
+    firms_public_nrt_available: bool = Field(alias="firmsPublicNrtAvailable", default=True)
+    ideam_max_days_per_query: int = Field(alias="ideamMaxDaysPerQuery")
+    citizen_reports_count: int = Field(alias="citizenReportsCount", default=0)
 
 
 AnyIngestResponse = FusionResponse | FirmsResponse | IdeamDirectoryResponse | ServiceStatus
+
+
+class ReadinessStatus(BaseModel):
+    """Response of the /healthz readiness probe (no /api prefix)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    ok: Literal[True] = True
+    service: str
+    uptime_sec: int = Field(alias="uptimeSec")
 
 
 def payload_of(response: AnyIngestResponse) -> dict[str, Any]:

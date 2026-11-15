@@ -79,10 +79,8 @@ class HotspotObservation(BaseModel):
     latitude: float = Field(ge=-90.0, le=90.0)
     longitude: float = Field(ge=-180.0, le=180.0)
     acquired_at: str = Field(description="Acquisition instant as ISO 8601 UTC string.")
-    observed_at_utc: str | None = Field(default=None, serialization_alias="observedAtUtc")
-    observed_at_local_cot: str | None = Field(
-        default=None, serialization_alias="observedAtLocalCot"
-    )
+    observed_at_utc: str | None = Field(default=None, alias="observedAtUtc")
+    observed_at_local_cot: str | None = Field(default=None, alias="observedAtLocalCot")
     acq_date: str = Field(description="UTC date used for daily grouping (YYYY-MM-DD).")
     acq_time: str = Field(description="UTC acquisition time (HHMM).")
     sensor: SensorType

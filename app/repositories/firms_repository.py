@@ -77,9 +77,9 @@ class FirmsRepository:
         observations: list[HotspotObservation] = []
         loaded_feeds: list[str] = []
         failed_feeds: list[str] = []
-        for feed, parsed in zip(PUBLIC_FEEDS, outcomes, strict=True):
+        for feed, (parsed, failure) in zip(PUBLIC_FEEDS, outcomes, strict=True):
             if parsed is None:
-                failed_feeds.append(f"{feed['id']} (sin respuesta)")
+                failed_feeds.append(f"{feed['id']} ({failure})")
             else:
                 observations.extend(parsed)
                 loaded_feeds.append(feed["id"])
@@ -95,10 +95,11 @@ class FirmsRepository:
         feed: dict[str, str],
         bbox: Bbox,
         ingested_at: str,
-    ) -> list[HotspotObservation] | None:
+    ) -> tuple[list[HotspotObservation] | None, str]:
+        """Fetch and parse one public feed; return (parsed, failure reason)."""
         cache_hit = self._feed_cache.get(feed["id"])
         if cache_hit is not None and time.monotonic() - cache_hit[0] < CACHE_TTL_SECONDS:
-            return parse_firms_csv(cache_hit[1], feed["label"], bbox=bbox, ingested_at=ingested_at)
+            return parse_firms_csv(cache_hit[1], feed["id"], bbox=bbox, ingested_at=ingested_at), ""
         try:
             response = await fetch_text_with_retry(
                 client,
@@ -106,12 +107,12 @@ class FirmsRepository:
                 timeout_seconds=FIRMS_FEED_TIMEOUT_SECONDS,
                 retries=FIRMS_FEED_RETRIES,
             )
-        except httpx.TransportError:
-            return None
+        except httpx.TransportError as error:
+            return None, str(error)
         if response.status_code != 200 or "latitude,longitude" not in response.text:
-            return None
+            return None, f"HTTP {response.status_code}"
         self._feed_cache[feed["id"]] = (time.monotonic(), response.text)
-        return parse_firms_csv(response.text, feed["label"], bbox=bbox, ingested_at=ingested_at)
+        return parse_firms_csv(response.text, feed["id"], bbox=bbox, ingested_at=ingested_at), ""
 
 
 def _client() -> httpx.AsyncClient:

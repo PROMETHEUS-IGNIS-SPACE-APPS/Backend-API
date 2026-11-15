@@ -1,4 +1,4 @@
-"""HTTP routes for the multi-agency fusion and historical coverage endpoints."""
+"""HTTP routes for the multi-agency fusion endpoint."""
 
 from typing import Annotated
 
@@ -49,39 +49,4 @@ async def get_observations(
         return await ingest_service.get_fusion_observations(from_date, to_date, region, bbox)
     except Exception as error:
         message = str(error) or "Error en fusión multibase de datos"
-        return ingestion_error_response(error, message)
-
-
-@router.get(
-    "/historical-all",
-    summary=(
-        "Multi-year coverage 2024-01-01 to today: sampled archive cuts, "
-        "a dense recent window and live FIRMS."
-    ),
-    description=(
-        "**Heavy endpoint**: builds the full multi-year coverage (dense last "
-        "45 days + one IDEAM archive cut per half-month + live FIRMS), "
-        "condensed to the 9000 most recent records to protect browser "
-        "performance. First uncached call can take tens of seconds because "
-        "it downloads up to ~110 daily files; afterwards it is served from "
-        "a 30-minute cache (`cached: true`). Prefer `/api/fusion/observations` "
-        "for interactive exploration."
-    ),
-    response_model=FusionResponse,
-)
-async def get_historical_all(
-    region: Annotated[
-        str,
-        Query(description="Region alias: antioquia | antioquia_ideam | colombia | colombia_wide."),
-    ] = "antioquia_ideam",
-    bbox: Annotated[
-        str | None,
-        Query(description="Explicit bbox: 'west,south,east,north' or IDEAM extent form."),
-    ] = None,
-) -> FusionResponse | JSONResponse:
-    """Return the condensed multi-year historical coverage."""
-    try:
-        return await ingest_service.get_historical_all(region, bbox)
-    except Exception as error:
-        message = str(error) or "Error consultando el histórico multi-anual disponible."
         return ingestion_error_response(error, message)

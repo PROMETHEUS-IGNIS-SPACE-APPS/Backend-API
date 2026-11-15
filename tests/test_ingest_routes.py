@@ -227,23 +227,6 @@ def test_fusion_observations_happy_path(patched) -> None:
     assert response.json()["metadata"]["source"].startswith("IDEAM")
 
 
-# --- GET /api/fusion/historical-all ---
-
-
-def test_historical_all_happy_path(patched) -> None:
-    async def fake(region: str, bbox_param: str | None) -> FusionResponse:
-        return build_fusion_response()
-
-    patched(get_historical_all=fake)
-
-    response = client.get("/api/fusion/historical-all")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["ok"] is True
-    assert body["observations"][0]["is_synthetic"] is False
-
-
 # --- GET /api/health ---
 
 
@@ -253,18 +236,36 @@ def test_public_health_reports_capabilities() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
+    assert body["hasFirmsKey"] is False
+    assert body["hasGeminiKey"] is False
     assert body["firmsPublicNrtAvailable"] is True
     assert body["ideamMaxDaysPerQuery"] == 90
+    assert body["citizenReportsCount"] == 0
+
+
+# --- GET /healthz ---
+
+
+def test_healthz_readiness_probe() -> None:
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["service"] == "prometheus-ignis"
+    assert isinstance(body["uptimeSec"], int)
+    assert body["uptimeSec"] >= 0
 
 
 def test_ingestion_paths_documented_in_openapi() -> None:
     schema = client.get("/openapi.json").json()
     for path in (
+        "/healthz",
         "/api/ideam/directory",
         "/api/ideam/observations",
         "/api/firms/observations",
         "/api/fusion/observations",
-        "/api/fusion/historical-all",
         "/api/health",
     ):
         assert path in schema["paths"]
+    assert "/api/fusion/historical-all" not in schema["paths"]

@@ -18,7 +18,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,10 +52,6 @@ from app.utils.geo import (
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 15 * 60.0
-HISTORICAL_CACHE_TTL_SECONDS = CACHE_TTL_SECONDS * 2
-HISTORICAL_ARCHIVE_START = "2024-01-01"
-HISTORICAL_DENSE_WINDOW_DAYS = 45
-HISTORICAL_MAX_RETURN = 9000
 
 IDEAM_SOURCE_LABEL = "IDEAM - SMByC Colombia"
 IDEAM_ATTRIBUTION = (
@@ -87,15 +83,19 @@ async def _cache_or_run[ResponseT](
     key: str,
     ttl_seconds: float,
     factory: Callable[[], Awaitable[ResponseT]],
-) -> ResponseT:
-    """Serve a TTL cache hit, share in-flight work, or execute the factory."""
+) -> tuple[ResponseT, bool]:
+    """Serve a TTL cache hit, share in-flight work, or execute the factory.
+
+    Returns the payload together with a flag telling whether it came from
+    the TTL cache (in-flight sharing counts as fresh, like the reference).
+    """
     hit = _response_cache.get(key)
     if hit is not None and time.monotonic() - hit[0] < ttl_seconds:
         result: ResponseT = hit[1]
-        return result
+        return result, True
     existing = _inflight_tasks.get(key)
     if existing is not None:
-        return await existing
+        return await existing, False
     task = asyncio.create_task(factory())
     _inflight_tasks[key] = task
     try:
@@ -103,16 +103,11 @@ async def _cache_or_run[ResponseT](
     finally:
         _inflight_tasks.pop(key, None)
     _response_cache[key] = (time.monotonic(), result)
-    return result
+    return result, False
 
 
 def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _cot_date_today() -> str:
-    """Current calendar date in Colombia (UTC-5, no DST)."""
-    return (datetime.now(UTC) - timedelta(hours=5)).strftime("%Y-%m-%d")
 
 
 def _snapshot_path(name: str) -> Path:
@@ -161,9 +156,10 @@ async def get_ideam_observations(
         )
     bbox = resolve_region_bbox(region, bbox_param)
     cache_key = f"ideam:{from_date}:{to_date}:{region}:{bbox_param or ''}"
-    return await _cache_or_run(
+    result, _ = await _cache_or_run(
         cache_key, CACHE_TTL_SECONDS, lambda: _run_ideam_window(from_date, to_date, region, bbox)
     )
+    return result
 
 
 async def _run_ideam_window(
@@ -188,7 +184,7 @@ async def _run_ideam_window(
             + ")"
         )
     deduplicated = deduplicate_observations(window.observations)
-    return FusionResponse(
+    payload = FusionResponse(
         degraded_mode=False,
         warning=(
             f"Algunos días no tuvieron archivo disponible: {', '.join(window.failed_files)}"
@@ -209,26 +205,32 @@ async def _run_ideam_window(
         ),
         observations=deduplicated,
     )
+    _save_snapshot("last_ideam.json", payload)
+    return payload
 
 
 async def get_firms_observations(region: str, bbox_param: str | None) -> FirmsResponse:
     """Serve real NASA FIRMS observations from the public NRT feeds."""
     bbox = resolve_region_bbox(region, bbox_param)
     cache_key = f"firms:{region}:{bbox_param or ''}"
-    return await _cache_or_run(cache_key, CACHE_TTL_SECONDS, lambda: _run_firms_public(bbox))
+    result, _ = await _cache_or_run(
+        cache_key, CACHE_TTL_SECONDS, lambda: _run_firms_public(bbox, region)
+    )
+    return result
 
 
-async def _run_firms_public(bbox: Bbox) -> FirmsResponse:
+async def _run_firms_public(bbox: Bbox, region: str) -> FirmsResponse:
     feeds: FirmsFeedsResult = await firms_repository.fetch_public_feeds(bbox)
     if not feeds.loaded_feeds:
         snapshot = _load_firms_snapshot()
         if snapshot is not None:
             return snapshot.model_copy(
                 update={
+                    "degraded_mode": True,
                     "warning": (
                         "NASA FIRMS no respondió temporalmente; mostrando último snapshot "
                         "NRT auténtico guardado."
-                    )
+                    ),
                 }
             )
         raise RuntimeError(
@@ -237,7 +239,8 @@ async def _run_firms_public(bbox: Bbox) -> FirmsResponse:
             + ")"
         )
     deduplicated = deduplicate_observations(feeds.observations)
-    return FirmsResponse(
+    payload = FirmsResponse(
+        degraded_mode=None,
         public_nrt_mode=True,
         has_map_key=False,
         source=FIRMS_SOURCE_LABEL,
@@ -248,6 +251,9 @@ async def _run_firms_public(bbox: Bbox) -> FirmsResponse:
         warning=FIRMS_PUBLIC_WARNING,
         observations=deduplicated,
     )
+    if region == "colombia":
+        _save_snapshot("last_firms.json", payload)
+    return payload
 
 
 async def get_fusion_observations(
@@ -256,9 +262,12 @@ async def get_fusion_observations(
     """Serve the multi-agency fusion of IDEAM and NASA FIRMS for a date range."""
     bbox = resolve_region_bbox(region, bbox_param)
     cache_key = f"fusion:{from_date}:{to_date}:{region}:{bbox_param or ''}"
-    return await _cache_or_run(
+    result, was_cached = await _cache_or_run(
         cache_key, CACHE_TTL_SECONDS, lambda: _run_fusion(from_date, to_date, region, bbox)
     )
+    if was_cached:
+        return result.model_copy(update={"cached": True})
+    return result
 
 
 async def _run_fusion(from_date: str, to_date: str, region: str, bbox: Bbox) -> FusionResponse:
@@ -338,111 +347,6 @@ async def _fetch_firms_safe(bbox: Bbox) -> tuple[list[HotspotObservation], list[
     return feeds.observations, feeds.loaded_feeds
 
 
-async def get_historical_all(region: str, bbox_param: str | None) -> FusionResponse:
-    """Serve the multi-year coverage: sampled archive cuts plus a dense recent window."""
-    bbox = resolve_region_bbox(region, bbox_param)
-    today_col = _cot_date_today()
-    cache_key = f"histall:{region}:{today_col}:{bbox_param or ''}"
-    base = await _cache_or_run(
-        cache_key, HISTORICAL_CACHE_TTL_SECONDS, lambda: _run_historical(region, bbox, today_col)
-    )
-    return base.model_copy(update={"cached": True})
-
-
-async def _run_historical(region: str, bbox: Bbox, today_col: str) -> FusionResponse:
-    dense_start = (
-        datetime.strptime(today_col, "%Y-%m-%d").replace(tzinfo=UTC)
-        - timedelta(days=HISTORICAL_DENSE_WINDOW_DAYS - 1)
-    ).strftime("%Y-%m-%d")
-    anchor_dates = await _select_archive_anchor_dates(dense_start)
-
-    dense_task = asyncio.create_task(_run_fusion(dense_start, today_col, region, bbox))
-    archive_task = asyncio.create_task(
-        ideam_repository.fetch_dates(
-            anchor_dates,
-            bbox,
-            concurrency=16,
-            timeout_seconds=4.5,
-            retries=0,
-        )
-    )
-    dense_fusion, archive = await asyncio.gather(
-        _safe(dense_task, "dense fusion"), _safe(archive_task, "archive sample")
-    )
-    archive_observations = archive.observations if archive is not None else []
-    archive_files = sorted(archive.loaded_files) if archive is not None else []
-
-    combined_raw = [*archive_observations, *(dense_fusion.observations if dense_fusion else [])]
-    deduplicated = deduplicate_observations(combined_raw)
-    truncated = len(deduplicated) > HISTORICAL_MAX_RETURN
-    sliced = deduplicated[:HISTORICAL_MAX_RETURN]
-
-    degraded = bool((dense_fusion is None or dense_fusion.degraded_mode) and not archive_files)
-    if truncated:
-        warning = (
-            f"Histórico 2024-01-01 → {today_col} condensado a los "
-            f"{HISTORICAL_MAX_RETURN:,} registros más recientes y puntos de control "
-            "bimensuales para proteger el rendimiento del navegador.".replace(",", ".")
-        )
-    else:
-        warning = (
-            f"Histórico completo 2024-01-01 → {today_col}: "
-            f"{HISTORICAL_DENSE_WINDOW_DAYS} días densos recientes + "
-            f"{len(archive_files)} cortes archivísticos mensuales + NASA FIRMS 7d en vivo."
-        )
-    dense_metadata = dense_fusion.metadata if dense_fusion is not None else None
-    return FusionResponse(
-        degraded_mode=degraded,
-        warning=warning,
-        metadata=IngestMetadata(
-            source=(f"Histórico Multi-Anual IDEAM (2024–{today_col[:4]}) + NASA FIRMS 7d"),
-            fetched_at_utc=_now_utc(),
-            from_=HISTORICAL_ARCHIVE_START,
-            to=today_col,
-            region=region,
-            bbox=BboxModel(**bbox),
-            files_loaded=[
-                *archive_files,
-                *(dense_metadata.files_loaded if dense_metadata else []),
-            ],
-            raw_count=len(combined_raw),
-            deduplicated_count=len(sliced),
-            attribution=(
-                "IDEAM - SMByC Colombia (Archivo 2024-01-01 → Actualidad) "
-                "+ NASA LANCE FIRMS Earthdata."
-            ),
-        ),
-        observations=sliced,
-    )
-
-
-async def _select_archive_anchor_dates(dense_start: str) -> list[str]:
-    """Pick one archive date per half-month slot from the IDEAM portal index."""
-    try:
-        directory = await ideam_repository.fetch_directory()
-    except Exception as error:
-        logger.warning("IDEAM directory listing failed for historical anchors: %s", error)
-        return []
-    candidates = sorted(
-        date for date in directory.all_dates if HISTORICAL_ARCHIVE_START <= date < dense_start
-    )
-    picked: dict[str, str] = {}
-    for date in candidates:
-        year_month = date[:7]
-        slot = f"{year_month}-{'H1' if int(date[8:10]) <= 15 else 'H2'}"
-        picked.setdefault(slot, date)
-    return sorted(picked.values())
-
-
-async def _safe(task: asyncio.Task[Any], label: str) -> Any:
-    """Await a task and convert failures into None with a logged reason."""
-    try:
-        return await task
-    except Exception as error:
-        logger.warning("%s failed: %s", label, error)
-        return None
-
-
 async def get_ideam_directory() -> IdeamDirectoryResponse:
     """List the daily IDEAM files currently published by the portal."""
     directory = await ideam_repository.fetch_directory()
@@ -458,7 +362,9 @@ def get_service_status() -> ServiceStatus:
     return ServiceStatus(
         service="NASA Fire Harmonization API - Public Data Ingest",
         timestamp_utc=_now_utc(),
-        has_firms_map_key=False,
+        has_gemini_key=False,
+        has_firms_key=False,
         firms_public_nrt_available=True,
         ideam_max_days_per_query=IDEAM_MAX_DAYS_PER_QUERY,
+        citizen_reports_count=0,
     )

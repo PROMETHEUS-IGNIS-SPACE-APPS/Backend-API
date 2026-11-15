@@ -1,12 +1,16 @@
 """FastAPI application for the NASA Fire Harmonization backend."""
 
 import os
+import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import API_VERSION
 from app.api.routes import firms, fusion, health, ideam, observations, status
+from app.schemas.ingest import ReadinessStatus
+
+_STARTED_AT_MONOTONIC = time.monotonic()
 
 _DEFAULT_DEV_ORIGINS = (
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
@@ -77,3 +81,10 @@ app.include_router(status.router)
 app.include_router(ideam.router)
 app.include_router(firms.router)
 app.include_router(fusion.router)
+
+
+@app.get("/healthz", tags=["status"], summary="Readiness probe (no /api prefix).")
+def readiness() -> ReadinessStatus:
+    """Return the minimal readiness body, as the reference application does."""
+    uptime = int(time.monotonic() - _STARTED_AT_MONOTONIC)
+    return ReadinessStatus(service="prometheus-ignis", uptime_sec=uptime)

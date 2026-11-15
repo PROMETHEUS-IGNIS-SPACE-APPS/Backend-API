@@ -21,9 +21,11 @@ router = APIRouter(prefix="/api/firms", tags=["ingestion"])
         "required) and filters them to the requested region/bbox. Does not "
         "require a `from`/`to` range: the feeds always cover the last 7 "
         "days. Cached 15 minutes; `feedsLoaded` reports which feeds "
-        "actually responded."
+        "actually responded. During a total FIRMS outage the last stored "
+        "snapshot for Colombia is served with `degradedMode: true`."
     ),
     response_model=FirmsResponse,
+    response_model_exclude_none=True,
 )
 async def get_observations(
     region: Annotated[
