@@ -7,7 +7,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import API_VERSION
-from app.api.routes import ai, citizen_reports, firms, fusion, health, ideam, observations, status
+from app.api.routes import (
+    ai,
+    citizen_reports,
+    firms,
+    fusion,
+    health,
+    ideam,
+    observations,
+    status,
+    weather,
+)
 from app.schemas.ingest import ReadinessStatus
 
 _STARTED_AT_MONOTONIC = time.monotonic()
@@ -90,6 +100,7 @@ app.include_router(firms.router)
 app.include_router(fusion.router)
 app.include_router(ai.router)
 app.include_router(citizen_reports.router)
+app.include_router(weather.router)
 
 
 @app.get("/healthz", tags=["status"], summary="Readiness probe (no /api prefix).")
