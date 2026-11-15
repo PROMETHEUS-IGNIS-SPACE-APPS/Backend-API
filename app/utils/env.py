@@ -16,9 +16,10 @@ def load_env_file(path: Path = _ENV_FILE) -> None:
     global _loaded
     if _loaded:
         return
-    _loaded = True
+    # Not latched while the file is missing, so creating .env later works without a restart.
     if not path.is_file():
         return
+    _loaded = True
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
