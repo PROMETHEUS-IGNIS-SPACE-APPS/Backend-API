@@ -161,10 +161,19 @@ Igual a `FusionResponse` con `metadata.ideamRawCount`,
 acierto de la caché TTL (15 min) marca `cached: true`; una respuesta
 fresca marca `cached: false`.
 
-> La versión anterior de este contrato documentaba
-> `GET /api/fusion/historical-all`; ese endpoint **se retiró** el
-> 2026-11-14 porque la referencia final (carpeta `Ejemplo`, actualizada
-> el mismo día) ya no lo expone ni su frontend lo consume.
+### GET /api/fusion/historical-all?region=&bbox=
+
+Igual a `FusionResponse`; ventana `2024-01-01` → hoy (fecha COT):
+45 días densos + cortes archivísticos semimensuales + FIRMS en vivo,
+condensado a los 9000 registros más recientes. Caché TTL de 30 min
+(`cached: true` en acierto). Verificado en vivo (2026-11-14): 9000
+registros, 114 archivos fuente, 99 días distintos.
+
+> Nota: este endpoint se retiró brevemente el 2026-11-14 siguiendo la
+> referencia final (`Ejemplo`), pero **se reincorporó** el mismo día
+> por decisión del equipo: la rama `develop` del frontend lo consume
+> (modo "Histórico muestreado"). El proyecto de referencia no lo
+> expone; es una extensión propia del backend.
 
 ### Errores de la ingesta
 

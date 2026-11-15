@@ -7,8 +7,10 @@ aporte.
   Ejemplo (PROMETHEUS IGNIS, versión final 2026-11-14): `/api/health`,
   `/healthz`, `/api/ideam/directory`, `/api/ideam/observations`,
   `/api/firms/observations`, `/api/fusion/observations`.
-- **historical-all ELIMINADO** (decisión del usuario 2026-11-14): el
-  Ejemplo final ya no lo expone ni su frontend lo consume.
+- **historical-all REINCORPORADO** (decisión del usuario 2026-11-14):
+  se retiró siguiendo el Ejemplo final, pero la rama `develop` del
+  frontend lo consume (modo "Histórico muestreado"). Es una extensión
+  propia del backend, no está en el Ejemplo.
 - Alineación con Ejemplo final: `/api/health` usa `hasFirmsKey` +
   `hasGeminiKey` + `citizenReportsCount`; snapshots IDEAM/FIRMS se
   guardan al éxito (antes nunca se escribían → degradado imposible);
@@ -20,7 +22,10 @@ aporte.
 - Verificado en vivo (2026-11-14): IDEAM 19 obs/1 día, FIRMS 3993
   obs/3 feeds (IDs nuevos), fusión 4051, 2ª llamada `cached: true`,
   snapshots `last_ideam/last_firms/last_fusion.json` creados.
-- 64 pruebas pasando (sin red); Ruff check+format limpios.
+- 65 pruebas pasando (sin red); Ruff check+format limpios.
+- historical-all verificado en vivo tras reincorporar (2026-11-14):
+  9000 obs, 114 archivos fuente, rango 2024-01-01 → hoy COT, sin
+  degradado; caché TTL 30 min.
 - Contratos documentados en `docs/api-contracts.md` (v0.2.0 ingesta).
 - Entorno: Python 3.13.17, venv `.venv`; sin dependencias nuevas
   (httpx ya estaba).

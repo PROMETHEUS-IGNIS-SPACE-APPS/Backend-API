@@ -18,7 +18,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,10 @@ from app.utils.geo import (
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 15 * 60.0
+HISTORICAL_CACHE_TTL_SECONDS = CACHE_TTL_SECONDS * 2
+HISTORICAL_ARCHIVE_START = "2024-01-01"
+HISTORICAL_DENSE_WINDOW_DAYS = 45
+HISTORICAL_MAX_RETURN = 9000
 
 IDEAM_SOURCE_LABEL = "IDEAM - SMByC Colombia"
 IDEAM_ATTRIBUTION = (
@@ -108,6 +112,11 @@ async def _cache_or_run[ResponseT](
 
 def _now_utc() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _cot_date_today() -> str:
+    """Current calendar date in Colombia (UTC-5, no DST)."""
+    return (datetime.now(UTC) - timedelta(hours=5)).strftime("%Y-%m-%d")
 
 
 def _snapshot_path(name: str) -> Path:
@@ -345,6 +354,111 @@ async def _fetch_firms_safe(bbox: Bbox) -> tuple[list[HotspotObservation], list[
         logger.warning("FIRMS fetch failed during fusion: %s", error)
         return [], []
     return feeds.observations, feeds.loaded_feeds
+
+
+async def get_historical_all(region: str, bbox_param: str | None) -> FusionResponse:
+    """Serve the multi-year coverage: sampled archive cuts plus a dense recent window."""
+    bbox = resolve_region_bbox(region, bbox_param)
+    today_col = _cot_date_today()
+    cache_key = f"histall:{region}:{today_col}:{bbox_param or ''}"
+    base, _ = await _cache_or_run(
+        cache_key, HISTORICAL_CACHE_TTL_SECONDS, lambda: _run_historical(region, bbox, today_col)
+    )
+    return base.model_copy(update={"cached": True})
+
+
+async def _run_historical(region: str, bbox: Bbox, today_col: str) -> FusionResponse:
+    dense_start = (
+        datetime.strptime(today_col, "%Y-%m-%d").replace(tzinfo=UTC)
+        - timedelta(days=HISTORICAL_DENSE_WINDOW_DAYS - 1)
+    ).strftime("%Y-%m-%d")
+    anchor_dates = await _select_archive_anchor_dates(dense_start)
+
+    dense_task = asyncio.create_task(_run_fusion(dense_start, today_col, region, bbox))
+    archive_task = asyncio.create_task(
+        ideam_repository.fetch_dates(
+            anchor_dates,
+            bbox,
+            concurrency=16,
+            timeout_seconds=4.5,
+            retries=0,
+        )
+    )
+    dense_fusion, archive = await asyncio.gather(
+        _safe(dense_task, "dense fusion"), _safe(archive_task, "archive sample")
+    )
+    archive_observations = archive.observations if archive is not None else []
+    archive_files = sorted(archive.loaded_files) if archive is not None else []
+
+    combined_raw = [*archive_observations, *(dense_fusion.observations if dense_fusion else [])]
+    deduplicated = deduplicate_observations(combined_raw)
+    truncated = len(deduplicated) > HISTORICAL_MAX_RETURN
+    sliced = deduplicated[:HISTORICAL_MAX_RETURN]
+
+    degraded = bool((dense_fusion is None or dense_fusion.degraded_mode) and not archive_files)
+    if truncated:
+        warning = (
+            f"Histórico 2024-01-01 → {today_col} condensado a los "
+            f"{HISTORICAL_MAX_RETURN:,} registros más recientes y puntos de control "
+            "bimensuales para proteger el rendimiento del navegador.".replace(",", ".")
+        )
+    else:
+        warning = (
+            f"Histórico completo 2024-01-01 → {today_col}: "
+            f"{HISTORICAL_DENSE_WINDOW_DAYS} días densos recientes + "
+            f"{len(archive_files)} cortes archivísticos mensuales + NASA FIRMS 7d en vivo."
+        )
+    dense_metadata = dense_fusion.metadata if dense_fusion is not None else None
+    return FusionResponse(
+        degraded_mode=degraded,
+        warning=warning,
+        metadata=IngestMetadata(
+            source=(f"Histórico Multi-Anual IDEAM (2024–{today_col[:4]}) + NASA FIRMS 7d"),
+            fetched_at_utc=_now_utc(),
+            from_=HISTORICAL_ARCHIVE_START,
+            to=today_col,
+            region=region,
+            bbox=BboxModel(**bbox),
+            files_loaded=[
+                *archive_files,
+                *(dense_metadata.files_loaded if dense_metadata else []),
+            ],
+            raw_count=len(combined_raw),
+            deduplicated_count=len(sliced),
+            attribution=(
+                "IDEAM - SMByC Colombia (Archivo 2024-01-01 → Actualidad) "
+                "+ NASA LANCE FIRMS Earthdata."
+            ),
+        ),
+        observations=sliced,
+    )
+
+
+async def _select_archive_anchor_dates(dense_start: str) -> list[str]:
+    """Pick one archive date per half-month slot from the IDEAM portal index."""
+    try:
+        directory = await ideam_repository.fetch_directory()
+    except Exception as error:
+        logger.warning("IDEAM directory listing failed for historical anchors: %s", error)
+        return []
+    candidates = sorted(
+        date for date in directory.all_dates if HISTORICAL_ARCHIVE_START <= date < dense_start
+    )
+    picked: dict[str, str] = {}
+    for date in candidates:
+        year_month = date[:7]
+        slot = f"{year_month}-{'H1' if int(date[8:10]) <= 15 else 'H2'}"
+        picked.setdefault(slot, date)
+    return sorted(picked.values())
+
+
+async def _safe(task: asyncio.Task[Any], label: str) -> Any:
+    """Await a task and convert failures into None with a logged reason."""
+    try:
+        return await task
+    except Exception as error:
+        logger.warning("%s failed: %s", label, error)
+        return None
 
 
 async def get_ideam_directory() -> IdeamDirectoryResponse:
