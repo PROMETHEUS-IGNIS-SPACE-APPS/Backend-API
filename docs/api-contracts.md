@@ -5,6 +5,232 @@ Data/ML/Statistics y Science Lead. Este documento debe mantenerse
 sincronizado con el comportamiento real de la API; si cambian los
 endpoints o los esquemas, se actualiza este archivo y sus pruebas.
 
+## Versión 0.2.0 (ingesta de datos reales — réplica del contrato "Ejemplo")
+
+Los endpoints de esta sección replican **exactamente** las rutas y
+payloads del servidor de referencia (`server.ts` del proyecto Ejemplo /
+PROMETHEUS IGNIS) para que ambos frontends puedan consumir esta API sin
+cambios. Los datos provienen **en vivo** de fuentes oficiales públicas:
+
+- **IDEAM - SMByC:** CSV diarios de puntos de calor de Colombia
+  (`https://puntosdecalor.ideam.gov.co/archivos-csv/`), delimitador `;`,
+  decimales con coma, horas en UTC-5 (Colombia, sin horario de verano).
+- **NASA FIRMS Earthdata (NRT público):** feeds CSV 7d de Sudamérica
+  (MODIS C6.1, VIIRS NOAA-20, VIIRS NOAA-21), sin MAP_KEY.
+
+### Convenciones de la ingesta real
+
+- Fechas de consulta (`from`/`to`): `YYYY-MM-DD`, inclusivas, máximo
+  90 días por consulta en IDEAM.
+- Regiones: `antioquia`, `antioquia_ideam`, `colombia`,
+  `colombia_wide`, sobrescribibles con `bbox`
+  (`west,south,east,north` o extent IDEAM `(N_W_S_E)`).
+- Todo registro lleva procedencia: `source`, `source_origin`
+  (`IDEAM` | `NASA_FIRMS`), `reference_url` e `is_synthetic: false`.
+- `confidence_raw` conserva el valor original del producto
+  (MODIS: 0–100; VIIRS: `l`/`n`/`h`; IDEAM: palabra de la columna
+  `Confianza`).
+- `confidence_level`/`confidence_score` son una **heurística de
+  presentación provisional** replicada del proyecto de referencia;
+  NO constituyen la normalización científica aprobada (F4 sigue
+  bloqueada para esa decisión).
+- La concordancia MODIS/VIIRS (~1.6 km, ±90 min) se marca con
+  `concordance: coincident_high | coincident_moderate` para evitar
+  sobreconteo silencioso.
+- Caché en memoria de 15 minutos; respuestas degradadas provienen de
+  snapshots auténticos guardados en `data/cache/` y siempre anuncian
+  `degradedMode: true` con `warning` explícito.
+
+### GET /api/health
+
+```json
+{
+  "ok": true,
+  "service": "NASA Fire Harmonization API - Public Data Ingest",
+  "timestampUtc": "2026-11-14T19:25:25.550672+00:00",
+  "hasGeminiKey": false,
+  "hasFirmsKey": false,
+  "firmsPublicNrtAvailable": true,
+  "ideamMaxDaysPerQuery": 90,
+  "citizenReportsCount": 0
+}
+```
+
+Nota (2026-11-14): el campo antes llamado `hasFirmsMapKey` pasó a
+llamarse `hasFirmsKey` para coincidir con la referencia;
+`citizenReportsCount` se expone en 0 porque este backend no integra
+reportes ciudadanos. Desde 2026-11-15 `hasGeminiKey` es `true` cuando hay
+`GEMINI_API_KEY` configurada para `POST /api/ai/explain`.
+
+### GET /healthz (sonda de readiness, sin prefijo `/api`)
+
+```json
+{ "ok": true, "service": "prometheus-ignis", "uptimeSec": 42 }
+```
+
+### GET /api/ideam/directory
+
+```json
+{
+  "ok": true,
+  "portalUrl": "https://puntosdecalor.ideam.gov.co/archivos-csv/",
+  "totalFiles": 1048,
+  "latestDates": ["2026-11-14", "2026-11-13"]
+}
+```
+
+### GET /api/ideam/observations?from=&to=&region=&bbox=
+
+Respuesta `200` (`FusionResponse`), verificada en vivo el 2026-11-14:
+
+```json
+{
+  "ok": true,
+  "cached": false,
+  "degradedMode": false,
+  "warning": null,
+  "metadata": {
+    "source": "IDEAM - SMByC Colombia",
+    "fetchedAtUtc": "2026-11-14T19:23:00+00:00",
+    "from": "2026-11-09",
+    "to": "2026-11-13",
+    "region": "antioquia_ideam",
+    "bbox": {"west": -78.73352, "south": 5.04717, "east": -72.27356, "north": 9.24309},
+    "filesLoaded": ["Puntos_de_calor_Colombia_2026-11-09.csv"],
+    "rawCount": 639,
+    "deduplicatedCount": 639,
+    "attribution": "IDEAM - SMByC. Puntos de calor en Colombia (...). Fuente original: NASA LANCE FIRMS."
+  },
+  "observations": [
+    {
+      "id": "IDEAM_VIIRS_202611131349_6.3764_-74.3615",
+      "observation_id": "IDEAM_VIIRS_202611131349_6.3764_-74.3615",
+      "latitude": 6.3764,
+      "longitude": -74.3615,
+      "acquired_at": "2026-11-13T18:49:00+00:00",
+      "observedAtUtc": "2026-11-13T18:49:00+00:00",
+      "observedAtLocalCot": "2026-11-13 13:49",
+      "acq_date": "2026-11-13",
+      "acq_time": "1349",
+      "sensor": "VIIRS",
+      "satellite": "NOAA-20",
+      "instrument": "VIIRS",
+      "confidence_raw": "Nominal",
+      "confidence_level": "nominal",
+      "confidence_score": 60,
+      "frp_mw": 5.2,
+      "brightness_k": 309.25,
+      "secondary_brightness_k": 289.35,
+      "scan_km": 0.55,
+      "track_km": 0.51,
+      "daynight": "N",
+      "concordance": "single_sensor",
+      "department": "Antioquia",
+      "municipality": "Puerto Berrío",
+      "source": "IDEAM (VIIRS-NOAA-20)",
+      "source_origin": "IDEAM",
+      "verification_status": null,
+      "quality_flags": [],
+      "ingested_at": "2026-11-14T19:23:00+00:00",
+      "reference_url": "https://puntosdecalor.ideam.gov.co/archivos-csv/Puntos_de_calor_Colombia_2026-11-13.csv",
+      "is_synthetic": false
+    }
+  ]
+}
+```
+
+### GET /api/firms/observations?region=&bbox=
+
+Respuesta `200` (`FirmsResponse`): añade `publicNrtMode: true`,
+`hasMapKey`, `source`, `feedsLoaded`, `count` y las mismas observaciones.
+En respuesta normal no aparece `degradedMode` (se omite); ante caída
+total de FIRMS se sirve el snapshot guardado para `colombia` con
+`degradedMode: true` y `warning`.
+
+Importante: los identificadores de FIRMS usan el **id del feed**
+(`observation_id: "FIRMS_MODIS_C6_1_7d_..."`, `source: "NASA FIRMS
+(MODIS_C6_1_7d)"`), igual que la referencia; `failedFeeds`/`failedFiles`
+incluyen el detalle `(HTTP xxx)`.
+
+Verificado en vivo (2026-11-14, Colombia): 3731 registros, 3 feeds,
+concordancia marcada en 45 pares.
+
+### GET /api/fusion/observations?from=&to=&region=&bbox=
+
+Igual a `FusionResponse` con `metadata.ideamRawCount`,
+`metadata.firmsRawCount` y fusión deduplicada de ambas fuentes. Un
+acierto de la caché TTL (15 min) marca `cached: true`; una respuesta
+fresca marca `cached: false`.
+
+### GET /api/fusion/historical-all?region=&bbox=
+
+Igual a `FusionResponse`; ventana `2024-01-01` → hoy (fecha COT):
+45 días densos + cortes archivísticos semimensuales + FIRMS en vivo,
+condensado a los 9000 registros más recientes. Caché TTL de 30 min
+(`cached: true` en acierto). Verificado en vivo (2026-11-14): 9000
+registros, 114 archivos fuente, 99 días distintos.
+
+> Nota: este endpoint se retiró brevemente el 2026-11-14 siguiendo la
+> referencia final (`Ejemplo`), pero **se reincorporó** el mismo día
+> por decisión del equipo: la rama `develop` del frontend lo consume
+> (modo "Histórico muestreado"). El proyecto de referencia no lo
+> expone; es una extensión propia del backend.
+
+### POST /api/ai/explain (interpretación con IA, opcional)
+
+Explica en lenguaje claro cifras que el frontend ya calculó (pronóstico Markov,
+validación, ranking, matrices del calendario). Usa Google Gemini desde el
+servidor; la clave vive solo en el backend (`GEMINI_API_KEY` en el entorno o en
+`Backend-API/.env`, ver `.env.example`; modelo opcional `GEMINI_MODEL`, por
+defecto `gemini-2.5-flash`). `GET /api/health` informa `hasGeminiKey`.
+
+Cuerpo:
+
+```json
+{ "mode": "predictability", "payload": { "...": "cifras de la plataforma" }, "language": "es" }
+```
+
+`mode` admite `predictability` o `calendar`. Respuesta 200:
+
+```json
+{
+  "ok": true,
+  "model": "gemini-2.5-flash",
+  "cached": false,
+  "structured": {
+    "resumenEjecutivo": "...",
+    "hallazgosClave": ["..."],
+    "interpretacionSensores": "...",
+    "interpretacionMarkov": "...",
+    "limitacionesYCautela": ["..."],
+    "recomendacionesOperativas": ["..."]
+  },
+  "disclaimer": "Lectura generada por IA a partir de las cifras de la plataforma. ..."
+}
+```
+
+Errores (`detail` en español): 503 sin `GEMINI_API_KEY`, 413 datos demasiado
+grandes (> 60 000 caracteres), 422 cuerpo inválido, 429 cuota del proveedor,
+502 error o respuesta inválida del proveedor. Respuestas iguales se guardan en
+caché en memoria (64 entradas). El modelo solo puede interpretar las cifras
+recibidas; no inventa ni modifica probabilidades.
+
+### Errores de la ingesta
+
+- `400`: fecha o rango inválido (`{"ok": false, "error": "..."}`).
+- `502`: fuente remota no disponible sin snapshot de respaldo.
+- `422`: parámetros con tipo incorrecto (FastAPI).
+
+### Decisiones pendientes (bloqueos registrados, sin cambios)
+
+- `confidence_score` definitivo: requiere método aprobado por
+  Science/Data (F4). El valor actual es una heurística de UI y debe
+  tratarse como tal.
+- Calendario, armonización y analítica siguen bloqueadas hasta la
+  definición científica aprobada.
+
+---
+
 ## Versión 0.1.0 (MVP — datos sintéticos)
 
 ### Convenciones generales
