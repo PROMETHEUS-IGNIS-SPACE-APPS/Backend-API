@@ -335,3 +335,38 @@ Consulta de observaciones de puntos calientes normalizadas.
 - **Calendario (`/calendar`), armonización (`/harmonization`) y
   analítica (`/analytics`):** bloqueadas hasta que exista una
   definición científica aprobada del método y las métricas.
+
+## Reportes ciudadanos
+
+Los reportes ciudadanos se persisten en SQLite. La ruta de la base se
+configura con `CITIZEN_REPORTS_DATABASE`; por defecto es
+`data/citizen_reports.db`. El MVP permite envío sin autenticación, con
+`name` y `contact` opcionales. Todo reporte nuevo inicia con estado
+`pendiente`; este estado no constituye confirmación de un incendio.
+
+### POST /api/citizen-reports
+
+Acepta `latitude`, `longitude`, `intensity`, `note` y `role`. También
+acepta opcionalmente `sector`, `experience`, `name` y `contact`.
+Devuelve **201** con el reporte persistido, `id` UUID, `created_at` UTC
+y `status`.
+
+### GET /api/citizen-reports?limit=100
+
+Devuelve los reportes más recientes, hasta 500 registros:
+
+```json
+{
+  "reports": [],
+  "count": 0
+}
+```
+
+### PATCH /api/citizen-reports/{id}
+
+Acepta `{ "status": "pendiente" | "verificado" }`. Devuelve **404** si
+el reporte no existe.
+
+### DELETE /api/citizen-reports/{id}
+
+Elimina el reporte y devuelve **204**. Devuelve **404** si no existe.
